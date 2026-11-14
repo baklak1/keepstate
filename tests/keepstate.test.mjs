@@ -100,7 +100,7 @@ test('parseHandoff splits 3 layers, handles oversized preamble, and keeps sessio
   assert.ok(!stripped.includes('keepstate:backup-notice'));
   assert.ok(stripped.includes('Новая фича X.'));
 
-  const parsed = parseHandoff(doc, 2);
+  const parsed = parseHandoff(doc, 2, 14336, 2);
   assert.equal(parsed.docTitle, '# Project — HANDOFF');
   assert.ok(parsed.invariantsText.includes('Никогда не удалять прод БД'));
   assert.ok(!parsed.invariantsText.includes('Intro notes'));
@@ -274,6 +274,7 @@ test('compactProject saves backup, merges concurrent append, respects lock and t
         {
           thresholdBytes: 100000,
           keepRecentSessions: 2,
+          maxRecentBytes: 2048,
           platformBackendMap: { claude: 'mock', antigravity: 'mock' },
           backends: {
             mock: {
@@ -351,5 +352,73 @@ test('cli.mjs init and status create 3-layer HANDOFF.md and report metrics', () 
     assert.equal(st.needsCompact, false);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('parseHandoff packs extra recent sessions within maxRecentBytes while preserving old sections to compact', () => {
+  const doc = [
+    '# App — HANDOFF',
+    '',
+    '## КРИТИЧНЫЕ ИНВАРИАНТЫ',
+    '- Rule 1',
+    '',
+    '## 2026-11-01 — Old 1',
+    '- Old archive text.',
+    '',
+    '## 2026-11-14 15:00 — Deploy A',
+    '- Big feature release details.',
+    '',
+    '## 2026-11-14 19:00 — Deploy B',
+    '- Hotfix details.',
+    '',
+    '## 2026-11-14 21:00 — Tiny note 1',
+    '- Short note.',
+    '',
+    '## 2026-11-14 21:20 — Tiny note 2',
+    '- Status check.',
+  ].join('\n');
+
+  const parsed = parseHandoff(doc, 2, 14336, 6);
+  assert.equal(parsed.oldSections.length, 1); // Old 1 kept for compaction
+  assert.match(parsed.oldSections[0].heading, /Old 1/);
+  assert.equal(parsed.recentSections.length, 4); // All 4 recent sessions preserved!
+  assert.match(parsed.recentSections[0].heading, /Deploy A/);
+  assert.match(parsed.recentSections[3].heading, /Tiny note 2/);
+});
+
+test('hook.mjs ignores pre-existing dirty files on read-only sessions and still catches edits in dirty folders or un-updated dirty HANDOFF', () => {
+  const repo = mkTempDir('keepstate-dirtybaseline-');
+  const stateDir = mkTempDir('keepstate-state-');
+  try {
+    initGitRepo(repo, {
+      'src/app.js': 'export const a = 1;\n',
+      'docs/HANDOFF.md': '# Demo\n\n## КРИТИЧНЫЕ ИНВАРИАНТЫ\n- Keep clean\n\n## 2026-11-10 — Init\n- Seed.\n',
+    });
+
+    // Pre-existing dirty working tree BEFORE SessionStart (like ParsMarket's work/ + dirty docs/HANDOFF.md)
+    fs.mkdirSync(path.join(repo, 'work', 'deploy'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'work', 'deploy', 'old.sh'), 'echo old\n', 'utf8');
+    fs.appendFileSync(path.join(repo, 'docs', 'HANDOFF.md'), '- Prior uncommited note.\n', 'utf8');
+
+    const sClaude = runHook('claude', 'session-start', { cwd: repo, session_id: 'd1' }, stateDir);
+    assert.equal(sClaude.status, 0);
+
+    // Agent did NO edits -> must allow stop cleanly!
+    const stopReadOnly = runHook('claude', 'stop', { cwd: repo, session_id: 'd1' }, stateDir);
+    assert.equal(stopReadOnly.status, 0);
+
+    // Agent adds a new file inside pre-existing untracked folder without updating dirty docs/HANDOFF.md -> must block!
+    fs.writeFileSync(path.join(repo, 'work', 'deploy', 'new.sh'), 'echo new\n', 'utf8');
+    const stopBlocked = runHook('claude', 'stop', { cwd: repo, session_id: 'd1' }, stateDir);
+    assert.equal(stopBlocked.status, 2);
+    assert.match(stopBlocked.stderr, /KEEPSTATE STOP BLOCK/);
+
+    // Agent appends current session note to docs/HANDOFF.md -> allows stop
+    fs.appendFileSync(path.join(repo, 'docs', 'HANDOFF.md'), '\n## 2026-11-14 — Added deploy script\n- Added new.sh.\n', 'utf8');
+    const stopAllowed = runHook('claude', 'stop', { cwd: repo, session_id: 'd1' }, stateDir);
+    assert.equal(stopAllowed.status, 0);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(stateDir, { recursive: true, force: true });
   }
 });

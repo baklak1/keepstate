@@ -63,12 +63,58 @@ function parsePorcelainLine(line) {
 
 export function getWorkingTreeChanges(projectRoot) {
   try {
-    const out = runGit(['status', '--porcelain'], projectRoot);
+    const out = runGit(['status', '--porcelain', '-uall'], projectRoot);
     if (!out.trim()) return [];
     return out.split(/\r?\n/).filter(Boolean).map(parsePorcelainLine);
   } catch {
     return [];
   }
+}
+
+/**
+ * Snapshot uncommitted files (including untracked paths) with content hashes so Stop hooks
+ * ignore pre-existing dirty files that were not touched during the current session.
+ */
+export function getWorkingTreeFingerprint(projectRoot, backupsRelDir = 'handoffbackups') {
+  const map = {};
+  let raw = '';
+  try {
+    raw = execFileSync('git', ['status', '--porcelain', '-uall', '-z'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    return map;
+  }
+  if (!raw) return map;
+
+  const entries = raw.split('\0');
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (!entry || entry.length < 4) continue;
+    const xy = entry.slice(0, 2);
+    const rel = normalizeRel(entry.slice(3));
+    if (xy[0] === 'R' || xy[0] === 'C') {
+      i += 1; // Skip original source path entry emitted by git status -z
+    }
+    if (!rel || isIgnoredArtifact(rel, backupsRelDir)) continue;
+
+    const abs = path.join(projectRoot, rel);
+    try {
+      const st = fs.lstatSync(abs);
+      if (st.isFile() && st.size <= 2 * 1024 * 1024) {
+        const digest = crypto.createHash('sha1').update(fs.readFileSync(abs)).digest('hex');
+        map[rel] = `${xy}:F:${digest}`;
+      } else {
+        map[rel] = `${xy}:S:${st.size}:${Math.trunc(st.mtimeMs)}`;
+      }
+    } catch {
+      map[rel] = `${xy}:MISSING`;
+    }
+  }
+  return map;
 }
 
 export function getCommittedChangesSince(projectRoot, startSha) {
@@ -198,7 +244,12 @@ function isRecentWrapperHeading(heading) {
  * 2) milestones + older history (compacted into rolling 1-year milestones)
  * 3) recentSessions (last N sessions preserved verbatim)
  */
-export function parseHandoff(rawText, keepRecentSessions = 2, maxRecentBytes = 16384) {
+export function parseHandoff(
+  rawText,
+  keepRecentSessions = 2,
+  maxRecentBytes = 14336,
+  maxRecentSessions = 6
+) {
   const cleaned = stripBackupNotice(rawText);
   const { preamble, sections } = splitTopLevelSections(cleaned);
 
@@ -239,7 +290,9 @@ export function parseHandoff(rawText, keepRecentSessions = 2, maxRecentBytes = 1
     historySections.unshift({ heading: '## Старая преамбула', body: extraPreamble, full: extraPreamble });
   }
 
-  // Keep up to `keepRecentSessions` trailing sections, bounded by maxRecentBytes (always keep at least 1)
+  // Keep at least `keepRecentSessions` (shrinking toward 1 if oversized), and when small sections
+  // sit at the tail, pull in older ones up to `maxRecentSessions` while staying within `maxRecentBytes`
+  // and leaving at least 1 section to compact when history exists.
   let recentCount = Math.min(keepRecentSessions, historySections.length);
   while (recentCount > 1) {
     const candidateBytes = Buffer.byteLength(
@@ -248,6 +301,16 @@ export function parseHandoff(rawText, keepRecentSessions = 2, maxRecentBytes = 1
     );
     if (candidateBytes <= maxRecentBytes) break;
     recentCount -= 1;
+  }
+
+  const ceiling = Math.max(recentCount, Math.min(maxRecentSessions, historySections.length - 1));
+  while (recentCount < ceiling) {
+    const nextBytes = Buffer.byteLength(
+      historySections.slice(-(recentCount + 1)).map((s) => s.full).join('\n\n'),
+      'utf8'
+    );
+    if (nextBytes > maxRecentBytes) break;
+    recentCount += 1;
   }
 
   const splitIdx = Math.max(0, historySections.length - recentCount);

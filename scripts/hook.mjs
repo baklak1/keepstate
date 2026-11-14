@@ -11,10 +11,10 @@ import {
   getCommittedChangesSince,
   getGitHead,
   getRecentCommits,
-  getWorkingTreeChanges,
-  hashString,
+  getWorkingTreeFingerprint,
   isGitRepo,
   isIgnoredArtifact,
+  hashString,
 } from './lib/handoff.mjs';
 import { isLockActive } from './lib/lock.mjs';
 
@@ -150,10 +150,33 @@ function spawnBackgroundCompact(projectRoot, platform) {
   }
 }
 
+function resolveBackupsRel(projectRoot, handoffPath, config) {
+  return handoffPath
+    ? path.relative(projectRoot, getBackupsDir(handoffPath, config)).replace(/\\/g, '/')
+    : config.backupsDirName || 'handoffbackups';
+}
+
+function getSessionWorkingChanges(currentWorking, baseline) {
+  if (!baseline || typeof baseline !== 'object') {
+    return Object.keys(currentWorking);
+  }
+  const changed = [];
+  for (const [rel, fp] of Object.entries(currentWorking)) {
+    if (baseline[rel] !== fp) changed.push(rel);
+  }
+  for (const rel of Object.keys(baseline)) {
+    if (!(rel in currentWorking)) changed.push(rel);
+  }
+  return changed;
+}
+
 function handleSessionStart(platform, payload, projectRoot, config) {
   const sessionId = payload.session_id || payload.conversationId || 'default';
   const handoffPath = findHandoffFile(projectRoot, config);
-  const headSha = isGitRepo(projectRoot) ? getGitHead(projectRoot) : null;
+  const inGit = isGitRepo(projectRoot);
+  const headSha = inGit ? getGitHead(projectRoot) : null;
+  const backupsRel = resolveBackupsRel(projectRoot, handoffPath, config);
+  const workingBaseline = inGit ? getWorkingTreeFingerprint(projectRoot, backupsRel) : {};
 
   if (!handoffPath) {
     writeSessionSnapshot(projectRoot, sessionId, {
@@ -161,6 +184,7 @@ function handleSessionStart(platform, payload, projectRoot, config) {
       handoffRel: null,
       handoffMtimeMs: 0,
       handoffHash: '',
+      workingBaseline,
     });
     emitSessionStart(platform, '');
     return;
@@ -175,6 +199,7 @@ function handleSessionStart(platform, payload, projectRoot, config) {
     handoffRel,
     handoffMtimeMs: stat.mtimeMs,
     handoffHash: hashString(raw),
+    workingBaseline,
   });
 
   const maxInjectChars = 36000;
@@ -183,7 +208,7 @@ function handleSessionStart(platform, payload, projectRoot, config) {
       ? `${raw.slice(0, 14000)}\n\n... [keepstate: файл слишком большой (${raw.length} символов), скоро сработает авто-сжатие; при необходимости читай остаток напрямую] ...\n\n${raw.slice(-14000)}`
       : raw;
 
-  const commits = isGitRepo(projectRoot) ? getRecentCommits(projectRoot, 5) : '';
+  const commits = inGit ? getRecentCommits(projectRoot, 5) : '';
   const blocks = [`=== keepstate: ${handoffRel} ===\n${body}`];
   if (commits) blocks.push(`=== Последние коммиты ===\n${commits}`);
 
@@ -216,26 +241,28 @@ function handleStop(platform, payload, projectRoot, config) {
     allowStop(platform);
   }
 
-  const workingChanges = getWorkingTreeChanges(projectRoot);
+  const backupsRel = resolveBackupsRel(projectRoot, handoffPath, config);
+  const currentWorking = getWorkingTreeFingerprint(projectRoot, backupsRel);
+  const sessionWorkingChanges = getSessionWorkingChanges(currentWorking, snapshot?.workingBaseline);
   const committedChanges = getCommittedChangesSince(projectRoot, snapshot?.headSha);
-  const allChanges = Array.from(new Set([...workingChanges, ...committedChanges]));
+  const allSessionChanges = Array.from(new Set([...sessionWorkingChanges, ...committedChanges]));
 
   if (!handoffPath) {
-    const anyCodeChange = allChanges.some((f) => !isIgnoredArtifact(f, config.backupsDirName));
+    const anyCodeChange = allSessionChanges.some((f) => !isIgnoredArtifact(f, backupsRel));
     if (anyCodeChange && config.suggestMissingHandoff && !wasSuggested(projectRoot)) {
       markSuggested(projectRoot);
+      const cmdHint = platform === 'claude' ? '/keepstate:handoff init' : '/handoff init';
       blockStop(
         platform,
-        'KEEPSTATE INFO: В этом проекте ещё нет HANDOFF.md. В конце своего ответа коротко (1-2 предложения) предложи пользователю завести HANDOFF.md через `/keepstate init` (объяснив, что он сохраняет важные запреты и прогресс между чатами с авто-сжатием и бекапами). Ничего не создавай без его ответа.'
+        `KEEPSTATE INFO: В этом проекте ещё нет HANDOFF.md. В конце своего ответа коротко (1-2 предложения) предложи пользователю завести HANDOFF.md через \`${cmdHint}\` (объяснив, что он сохраняет важные запреты и прогресс между чатами с авто-сжатием и бекапами). Ничего не создавай без его ответа.`
       );
     }
     allowStop(platform);
   }
 
   const handoffRel = path.relative(projectRoot, handoffPath).replace(/\\/g, '/');
-  const backupsRel = path.relative(projectRoot, getBackupsDir(handoffPath, config)).replace(/\\/g, '/');
 
-  const codeChanged = allChanges.some(
+  const codeChanged = allSessionChanges.some(
     (f) => f !== handoffRel && !isIgnoredArtifact(f, backupsRel)
   );
   if (!codeChanged) {
@@ -244,12 +271,12 @@ function handleStop(platform, payload, projectRoot, config) {
 
   const currentRaw = fs.readFileSync(handoffPath, 'utf8');
   const currentStat = fs.statSync(handoffPath);
-  const handoffUpdated =
-    allChanges.includes(handoffRel) ||
-    (snapshot &&
-      snapshot.handoffHash &&
-      (hashString(currentRaw) !== snapshot.handoffHash ||
-        currentStat.mtimeMs > snapshot.handoffMtimeMs + 100));
+  const hasHandoffBaseline = Boolean(snapshot && snapshot.handoffHash);
+  const handoffUpdated = hasHandoffBaseline
+    ? committedChanges.includes(handoffRel) ||
+      hashString(currentRaw) !== snapshot.handoffHash ||
+      currentStat.mtimeMs > snapshot.handoffMtimeMs + 100
+    : allSessionChanges.includes(handoffRel);
 
   if (!handoffUpdated) {
     blockStop(

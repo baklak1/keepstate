@@ -76,7 +76,12 @@ export function compactProject({ cwd, platform = 'claude', backend: explicitBack
   try {
     const rawText = fs.readFileSync(handoffPath, 'utf8');
     const originalHash = hashString(rawText);
-    const parsed = parseHandoff(rawText, config.keepRecentSessions);
+    const parsed = parseHandoff(
+      rawText,
+      config.keepRecentSessions,
+      config.maxRecentBytes,
+      config.maxRecentSessions
+    );
 
     if (parsed.oldSections.length === 0) {
       return { compacted: false, reason: 'nothing_to_compact', bytes: Buffer.byteLength(rawText, 'utf8') };
@@ -102,7 +107,12 @@ export function compactProject({ cwd, platform = 'claude', backend: explicitBack
     let recentSections = parsed.recentSections;
     let invariantsText = parsed.invariantsText;
     if (hashString(currentDiskText) !== originalHash) {
-      const latestParsed = parseHandoff(currentDiskText, config.keepRecentSessions);
+      const latestParsed = parseHandoff(
+        currentDiskText,
+        config.keepRecentSessions,
+        config.maxRecentBytes,
+        config.maxRecentSessions
+      );
       recentSections = latestParsed.recentSections;
       if (latestParsed.invariantsText) invariantsText = latestParsed.invariantsText;
     }

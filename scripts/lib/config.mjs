@@ -6,6 +6,8 @@ export const DEFAULT_CONFIG = {
   enabled: true,
   thresholdBytes: 36864,
   keepRecentSessions: 2,
+  maxRecentSessions: 6,
+  maxRecentBytes: 14336,
   maxMilestones: 18,
   handoffPath: null,
   handoffCandidates: ['HANDOFF.md', 'docs/HANDOFF.md'],

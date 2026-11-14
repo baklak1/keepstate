@@ -1,9 +1,9 @@
 ---
-name: keepstate
-description: Enforce HANDOFF.md updates across sessions, compact bloated handoffs into 3-layer memory with handoffbackups/, and cross-check critical historical facts in backups. Use when the user invokes /keepstate, asks to initialize HANDOFF.md, inspect handoff status, run compaction, or verify critical details against handoffbackups/.
+name: handoff
+description: Enforce HANDOFF.md updates across sessions, compact bloated handoffs into 3-layer memory with handoffbackups/, and cross-check critical historical facts in backups. Use when the user invokes /keepstate:handoff (or /handoff), asks to initialize HANDOFF.md, inspect handoff status, run compaction, or verify critical details against handoffbackups/.
 ---
 
-# Keepstate
+# Keepstate (`/keepstate:handoff`)
 
 Zero-daemon auto-handoff enforcement and 3-layer threshold compaction for **Claude Code** and **Antigravity**.
 
@@ -14,7 +14,7 @@ Find `scripts/cli.mjs` relative to the installed plugin root:
 2. If `$PLUGIN_ROOT` is set: `node "$PLUGIN_ROOT/scripts/cli.mjs"`
 3. Otherwise resolve `../../scripts/cli.mjs` relative to this `SKILL.md` file.
 
-## Workflows (`/keepstate`)
+## Workflows (`/keepstate:handoff` / `/handoff`)
 
 ### 1. Initialize (`init`)
 When a project does not yet have `HANDOFF.md` (or `docs/HANDOFF.md`):
@@ -45,7 +45,7 @@ Defaults:
 How the 3-layer pyramid works:
 1. **Top (`## КРИТИЧНЫЕ ИНВАРИАНТЫ`)** — never touched, preserved verbatim across every compaction.
 2. **Middle (`## Вехи и ключевые решения`)** — rolling memory capped at `18` bullets (`maxMilestones`). Merges old session history + previous milestones, retaining architectural rationale, non-obvious bug root causes, and DB/API/deploy constraints while dropping obsolete tactical churn so the file stays compact even after a year+.
-3. **Bottom (`## YYYY-MM-DD — ...`)** — appends chronologically; keeps the latest `2` top-level `##` session sections verbatim (bounded by `16384` bytes, always keeping at least the newest 1).
+3. **Bottom (`## YYYY-MM-DD — ...`)** — appends chronologically; preserves at least `2` recent top-level `##` session sections verbatim and pulls in up to `6` trailing sections while staying within `14336` bytes (`maxRecentBytes`), so short updates never wipe out larger same-day sessions.
 4. **Backup + Footer Notice** — saves the full uncompacted original to `handoffbackups/handoff_backup_YYYY-MM-DD_HH-MM-SS.md` and appends an `<!-- keepstate:backup-notice -->` block instructing agents to double-check ONLY critically important facts in `handoffbackups/`.
 
 When updating `HANDOFF.md` at the end of a coding session:
@@ -61,7 +61,9 @@ Before making risky changes involving auth, migrations, infra/deploys, credentia
 Optional `.keepstate.json` at project root (or `~/.keepstate/config.json` globally) overrides defaults:
 - `enabled` (bool, default `true`)
 - `thresholdBytes` (int, default `36864`)
-- `keepRecentSessions` (int, default `2`)
+- `keepRecentSessions` (int, default `2` — minimum recent sections to keep)
+- `maxRecentSessions` (int, default `6` — cap when packing extra recent sections under `maxRecentBytes`)
+- `maxRecentBytes` (int, default `14336`)
 - `maxMilestones` (int, default `18`)
 - `handoffPath` (string or `null`, default checks `HANDOFF.md` then `docs/HANDOFF.md`)
 - `backupsDirName` (string, default `"handoffbackups"`)
