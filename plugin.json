@@ -1,0 +1,18 @@
+{
+  "name": "keepstate",
+  "displayName": "Keepstate",
+  "version": "1.0.0",
+  "description": "Zero-daemon auto-handoff and 3-layer threshold compaction for Claude Code and Antigravity.",
+  "author": {
+    "name": "baklak1",
+    "url": "https://github.com/baklak1"
+  },
+  "repository": "https://github.com/baklak1/keepstate",
+  "homepage": "https://github.com/baklak1/keepstate",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Initialize HANDOFF.md in this project with critical invariants",
+    "Check keepstate status and compact HANDOFF.md now",
+    "Verify critical details in handoffbackups/ against current HANDOFF.md"
+  ]
+}

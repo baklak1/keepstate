@@ -1,0 +1,20 @@
+{
+  "name": "keepstate",
+  "version": "1.0.0",
+  "description": "Zero-daemon auto-handoff and 3-layer threshold compaction for Claude Code and Antigravity.",
+  "author": {
+    "name": "baklak1"
+  },
+  "repository": "https://github.com/baklak1/keepstate",
+  "homepage": "https://github.com/baklak1/keepstate",
+  "license": "MIT",
+  "hooks": "./.claude-plugin/hooks.json",
+  "keywords": [
+    "claude-code",
+    "antigravity",
+    "handoff",
+    "memory",
+    "compaction",
+    "hooks"
+  ]
+}

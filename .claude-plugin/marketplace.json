@@ -1,0 +1,17 @@
+{
+  "name": "baklak1-keepstate",
+  "owner": {
+    "name": "baklak1"
+  },
+  "metadata": {
+    "description": "Keepstate plugin marketplace"
+  },
+  "plugins": [
+    {
+      "name": "keepstate",
+      "version": "1.0.0",
+      "source": "./",
+      "description": "Zero-daemon auto-handoff and 3-layer threshold compaction for Claude Code and Antigravity."
+    }
+  ]
+}

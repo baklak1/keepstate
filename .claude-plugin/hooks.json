@@ -1,0 +1,27 @@
+{
+  "description": "Keepstate auto-handoff enforcement and 3-layer threshold compaction hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" --platform claude --event session-start",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" --platform claude --event stop",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
