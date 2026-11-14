@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG = {
   handoffCandidates: ['HANDOFF.md', 'docs/HANDOFF.md'],
   backupsDirName: 'handoffbackups',
   suggestMissingHandoff: true,
+  injectOnStart: false,
   autoCompactOnStop: true,
   compactTimeoutMs: 180000,
   lockTtlMs: 300000,

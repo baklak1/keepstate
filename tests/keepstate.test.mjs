@@ -153,7 +153,7 @@ test('hook.mjs suggests HANDOFF.md once per repo when missing and stays silent a
   }
 });
 
-test('hook.mjs injects context on SessionStart and enforces HANDOFF update on Stop (working tree & committed)', () => {
+test('hook.mjs stays silent on SessionStart by default (injectOnStart=false), supports opt-in injectOnStart=true, and enforces HANDOFF update on Stop', () => {
   const repo = mkTempDir('keepstate-enforce-');
   const stateDir = mkTempDir('keepstate-state-');
   try {
@@ -162,7 +162,18 @@ test('hook.mjs injects context on SessionStart and enforces HANDOFF update on St
       'HANDOFF.md': '# Demo\n\n## КРИТИЧНЫЕ ИНВАРИАНТЫ\n- Port 4321\n\n## 2026-11-10 — Init\n- Setup.\n',
     });
 
-    // SessionStart (claude & antigravity)
+    // Default SessionStart -> silent ({}), no token bloat
+    const startClaudeSilent = runHook('claude', 'session-start', { cwd: repo, session_id: 'c0' }, stateDir);
+    assert.equal(startClaudeSilent.status, 0);
+    assert.deepEqual(JSON.parse(startClaudeSilent.stdout), {});
+
+    const startAgySilent = runHook('antigravity', 'session-start', { workspacePaths: [repo], conversationId: 'a0' }, stateDir);
+    assert.equal(startAgySilent.status, 0);
+    assert.deepEqual(JSON.parse(startAgySilent.stdout), {});
+
+    // Opt-in injectOnStart=true -> injects HANDOFF context
+    fs.writeFileSync(path.join(repo, '.keepstate.json'), JSON.stringify({ injectOnStart: true }), 'utf8');
+
     const startClaude = runHook('claude', 'session-start', { cwd: repo, session_id: 'c1' }, stateDir);
     assert.equal(startClaude.status, 0);
     const parsedClaude = JSON.parse(startClaude.stdout);

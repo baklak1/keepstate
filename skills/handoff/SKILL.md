@@ -68,5 +68,6 @@ Optional `.keepstate.json` at project root (or `~/.keepstate/config.json` global
 - `handoffPath` (string or `null`, default checks `HANDOFF.md` then `docs/HANDOFF.md`)
 - `backupsDirName` (string, default `"handoffbackups"`)
 - `suggestMissingHandoff` (bool, default `true`)
+- `injectOnStart` (bool, default `false` — set `true` to auto-inject `HANDOFF.md` on `SessionStart`)
 - `autoCompactOnStop` (bool, default `true`)
 - `platformBackendMap` / `backends` — map platforms or add `custom-cli` compactors (e.g. `codex`, `gemini`, custom scripts with `{promptFile}` and `{model}` placeholders).

@@ -7,7 +7,7 @@ Keepstate keeps long-lived project context in a version-controlled `HANDOFF.md` 
 ## Why Keepstate
 
 - **Automatic `HANDOFF.md` discipline**: On `SessionStart`, snapshots pre-existing dirty/untracked files so read-only sessions aren't falsely blocked; on `Stop`, if files actually changed during this session (working tree edits or new commits) without updating `HANDOFF.md` (or `docs/HANDOFF.md`), Keepstate pauses completion and tells the agent to record progress before exiting.
-- **Session context injection**: On `SessionStart`, injects `HANDOFF.md` plus recent git commits directly into the session (with head + tail truncation notice if the file grows large before compaction finishes).
+- **Zero-bloat `SessionStart`**: By default (`injectOnStart: false`), `SessionStart` only records a lightweight baseline snapshot (git `HEAD`, `HANDOFF.md` hash, dirty files) without injecting `HANDOFF.md` tokens into unrelated or short sessions—the agent reads `HANDOFF.md` on demand (or set `"injectOnStart": true` if you want automatic injection).
 - **Zero-nag missing handoff prompt**: In git repositories without `HANDOFF.md`, suggests initializing one via `/keepstate:handoff init` (Claude Code) or `/handoff init` (Antigravity) at most **once per repo** (tracked in `~/.keepstate/suggested.json`).
 - **Background compaction at ~36 KB**: When `HANDOFF.md` crosses `36864` bytes (`thresholdBytes`), `Stop` spawns a detached compactor protected by `.keepstate.lock`, content-hash concurrent-edit reconciliation, and `KEEPSTATE_COMPACTING=1` recursion prevention.
 - **3-layer pyramid built for 1+ year projects**:
@@ -75,6 +75,7 @@ Override defaults per repository via `.keepstate.json` or globally via `~/.keeps
   "handoffCandidates": ["HANDOFF.md", "docs/HANDOFF.md"],
   "backupsDirName": "handoffbackups",
   "suggestMissingHandoff": true,
+  "injectOnStart": false,
   "autoCompactOnStop": true,
   "compactTimeoutMs": 180000,
   "platformBackendMap": {

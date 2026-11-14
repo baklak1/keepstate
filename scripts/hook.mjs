@@ -202,6 +202,11 @@ function handleSessionStart(platform, payload, projectRoot, config) {
     workingBaseline,
   });
 
+  if (!config.injectOnStart) {
+    emitSessionStart(platform, '');
+    return;
+  }
+
   const maxInjectChars = 36000;
   const body =
     raw.length > maxInjectChars
